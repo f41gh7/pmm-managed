@@ -115,6 +115,7 @@ type gRPCServerDeps struct {
 	db             *reform.DB
 	prometheus     *prometheus.Service
 	vmdb           *victoriametrics.VictoriaMetrics
+	vmalert *victoriametrics.VMAlert
 	server         *server.Server
 	agentsRegistry *agents.Registry
 	grafanaClient  *grafana.Client
@@ -152,7 +153,7 @@ func runGRPCServer(ctx context.Context, deps *gRPCServerDeps) {
 	inventorypb.RegisterAgentsServer(gRPCServer, inventorygrpc.NewAgentsServer(agentsSvc))
 
 	nodeSvc := management.NewNodeService(deps.db, deps.agentsRegistry)
-	serviceSvc := management.NewServiceService(deps.db, deps.agentsRegistry, deps.prometheus, deps.vmdb)
+	serviceSvc := management.NewServiceService(deps.db, deps.agentsRegistry, deps.prometheus, deps.vmdb,deps.vmalert)
 	mysqlSvc := management.NewMySQLService(deps.db, deps.agentsRegistry)
 	mongodbSvc := management.NewMongoDBService(deps.db, deps.agentsRegistry)
 	postgresqlSvc := management.NewPostgreSQLService(deps.db, deps.agentsRegistry)
@@ -167,7 +168,7 @@ func runGRPCServer(ctx context.Context, deps *gRPCServerDeps) {
 	managementpb.RegisterProxySQLServer(gRPCServer, managementgrpc.NewManagementProxySQLServer(proxysqlSvc))
 	managementpb.RegisterActionsServer(gRPCServer, managementgrpc.NewActionsServer(deps.agentsRegistry, deps.db))
 	managementpb.RegisterRDSServer(gRPCServer, management.NewRDSService(deps.db, deps.agentsRegistry))
-	managementpb.RegisterExternalServer(gRPCServer, management.NewExternalService(deps.db, deps.prometheus, deps.vmdb))
+	managementpb.RegisterExternalServer(gRPCServer, management.NewExternalService(deps.db, deps.prometheus, deps.vmdb,deps.vmalert))
 	managementpb.RegisterAnnotationServer(gRPCServer, managementgrpc.NewAnnotationServer(deps.db, deps.grafanaClient))
 	managementpb.RegisterSecurityChecksServer(gRPCServer, managementgrpc.NewChecksServer(checksSvc))
 
@@ -443,6 +444,8 @@ func main() {
 	prometheusURLF := kingpin.Flag("prometheus-url", "Prometheus base URL").Default("http://127.0.0.1:9090/prometheus/").String()
 
 	victoriaMetricsURLF := kingpin.Flag("victoriametrics-url", "VictoriaMetrics base URL").Default("http://127.0.0.1:8428/").String()
+	victoriaMetricsVMAlertURLF := kingpin.Flag("victoriametrics-vmalert-url", "VictoriaMetrics VMAlert base URL").Default("http://127.0.0.1:8880/").String()
+
 	victoriaMetricsConfigF := kingpin.Flag("victoriametrics-config", "VictoriaMetrics scape configuration file path").Default("/etc/victoriametrics-promscrape.yml").String()
 
 	grafanaAddrF := kingpin.Flag("grafana-addr", "Grafana HTTP API address").Default("127.0.0.1:3000").String()
@@ -525,6 +528,7 @@ func main() {
 	if err != nil {
 		l.Panicf("VictoriaMetrics service problem: %+v", err)
 	}
+	vmalert, err := victoriametrics.NewVMAlert(alertingRules,db,*victoriaMetricsVMAlertURLF)
 
 	qanClient := getQANClient(ctx, sqlDB, *postgresDBNameF, *qanAPIAddrF)
 
@@ -552,6 +556,7 @@ func main() {
 		DB:                      db,
 		Prometheus:              prometheus,
 		VictoriaMetrics:         vmdb,
+		VMAlert: vmalert,
 		Alertmanager:            alertmanager,
 		Supervisord:             supervisord,
 		TelemetryService:        telemetry,
@@ -610,6 +615,12 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		vmalert.Run(ctx)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		vmdb.Run(ctx)
 	}()
 	wg.Add(1)
@@ -649,6 +660,7 @@ func main() {
 			db:             db,
 			prometheus:     prometheus,
 			vmdb:           vmdb,
+			vmalert: vmalert,
 			server:         server,
 			agentsRegistry: agentsRegistry,
 			grafanaClient:  grafanaClient,
