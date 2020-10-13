@@ -39,6 +39,7 @@ import (
 
 	"github.com/percona/pmm-managed/models"
 	"github.com/percona/pmm-managed/services/agents/channel"
+	prom_service "github.com/percona/pmm-managed/services/prometheus"
 	"github.com/percona/pmm-managed/utils/logger"
 )
 
@@ -522,9 +523,15 @@ func (r *Registry) SendSetStateRequest(ctx context.Context, pmmAgentID string) {
 		}
 	}
 
+	// TODO add scrape config
+	cfg, err := prom_service.GetAgentScrapeConfig(pmmAgentID, l, r.db)
+	if err != nil {
+		l.WithError(err).Errorf("cannot get agent scrape config for agent: %s", pmmAgentID)
+	}
 	state := &agentpb.SetStateRequest{
-		AgentProcesses: agentProcesses,
-		BuiltinAgents:  builtinAgents,
+		AgentProcesses:      agentProcesses,
+		BuiltinAgents:       builtinAgents,
+		VmagentScrapeConfig: cfg,
 	}
 	l.Infof("SendSetStateRequest: %+v.", state)
 	resp := agent.channel.SendRequest(state)

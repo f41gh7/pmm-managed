@@ -96,6 +96,8 @@ type Agent struct {
 
 	RDSBasicMetricsDisabled    bool `reform:"rds_basic_metrics_disabled"`
 	RDSEnhancedMetricsDisabled bool `reform:"rds_enhanced_metrics_disabled"`
+
+	PushModelEnabled bool `reform:"push_model_enabled"`
 }
 
 // BeforeInsert implements reform.BeforeInserter interface.

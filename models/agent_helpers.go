@@ -30,6 +30,8 @@ import (
 	"gopkg.in/reform.v1"
 )
 
+var pushModeSupported = version.MustParse("2.10.0")
+
 func checkUniqueAgentID(q *reform.Querier, id string) error {
 	if id == "" {
 		panic("empty Agent ID")
@@ -56,6 +58,8 @@ type AgentFilters struct {
 	ServiceID string
 	// Return Agents with provided type.
 	AgentType *AgentType
+	// Return only Agents, that supports push model.
+	PushModelEnabled bool
 }
 
 // FindAgents returns Agents by filters.
@@ -274,7 +278,7 @@ func CreatePMMAgent(q *reform.Querier, runsOnNodeID string, customLabels map[str
 }
 
 // CreateNodeExporter creates NodeExporter.
-func CreateNodeExporter(q *reform.Querier, pmmAgentID string, customLabels map[string]string) (*Agent, error) {
+func CreateNodeExporter(q *reform.Querier, pmmAgentID string, customLabels map[string]string, pushModelDisabled bool) (*Agent, error) {
 	// TODO merge into CreateAgent
 
 	id := "/agent_id/" + uuid.New().String()
@@ -286,12 +290,26 @@ func CreateNodeExporter(q *reform.Querier, pmmAgentID string, customLabels map[s
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("\n\nagent: %v", pmmAgent.AgentID)
+	fmt.Printf("agent: %v", pmmAgent.Version)
+
+	//v, err := version.Parse(pointer.GetString(pmmAgent.Version))
+	//if err != nil {
+	//	return nil, fmt.Errorf("parse agent version failed: %w", err)
+	//}
+	var pushModelEnabled bool
+	//if !pushModelDisabled && !v.Less(pushModeSupported) {
+	//	pushModelEnabled = true
+	//}
+	// TODO fix
+	pushModelEnabled = true
 
 	row := &Agent{
-		AgentID:    id,
-		AgentType:  NodeExporterType,
-		PMMAgentID: &pmmAgentID,
-		NodeID:     pmmAgent.RunsOnNodeID,
+		AgentID:          id,
+		AgentType:        NodeExporterType,
+		PMMAgentID:       &pmmAgentID,
+		NodeID:           pmmAgent.RunsOnNodeID,
+		PushModelEnabled: pushModelEnabled,
 	}
 	if err := row.SetCustomLabels(customLabels); err != nil {
 		return nil, err
@@ -378,6 +396,7 @@ type CreateAgentParams struct {
 	AWSSecretKey                   string
 	RDSBasicMetricsDisabled        bool
 	RDSEnhancedMetricsDisabled     bool
+	PushModelDisabled              bool
 }
 
 // CreateAgent creates Agent with given type.
@@ -387,8 +406,21 @@ func CreateAgent(q *reform.Querier, agentType AgentType, params *CreateAgentPara
 		return nil, err
 	}
 
-	if _, err := FindAgentByID(q, params.PMMAgentID); err != nil {
+	var pushEnabled bool
+	fmt.Printf("ADDING NEW AGENT\n")
+	if foundAgent, err := FindAgentByID(q, params.PMMAgentID); err != nil {
 		return nil, err
+	} else {
+		v, err := version.Parse(pointer.GetString(foundAgent.Version))
+		if err != nil {
+			return nil, fmt.Errorf("cannot create agent, parse version failed: %w", err)
+		}
+		if !v.Less(pushModeSupported) {
+			pushEnabled = true
+		}
+	}
+	if params.PushModelDisabled {
+		pushEnabled = false
 	}
 
 	if params.NodeID != "" {
@@ -419,6 +451,7 @@ func CreateAgent(q *reform.Querier, agentType AgentType, params *CreateAgentPara
 		AWSSecretKey:                   pointer.ToStringOrNil(params.AWSSecretKey),
 		RDSBasicMetricsDisabled:        params.RDSBasicMetricsDisabled,
 		RDSEnhancedMetricsDisabled:     params.RDSEnhancedMetricsDisabled,
+		PushModelEnabled:               pushEnabled,
 	}
 	if err := row.SetCustomLabels(params.CustomLabels); err != nil {
 		return nil, err

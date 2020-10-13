@@ -19,6 +19,7 @@ package prometheus
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -27,6 +28,7 @@ import (
 	"path"
 	"reflect"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/AlekSi/pointer"
@@ -165,12 +167,53 @@ func (svc *Service) loadBaseConfig() *config.Config {
 
 // AddScrapeConfigs wraps addScrapeConfigs for victoriametrics package.
 func AddScrapeConfigs(l *logrus.Entry, cfg *config.Config, q *reform.Querier, s *models.MetricsResolutions) error {
-	return addScrapeConfigs(l, cfg, q, s)
+	return addScrapeConfigs(l, cfg, q, s, models.AgentFilters{})
+}
+
+// GetAgentScrapeConfig
+func GetAgentScrapeConfig(pmmAgentID string, l *logrus.Entry, db *reform.DB) ([]byte, error) {
+	var cfg config.Config
+	e := db.InTransaction(func(tx *reform.TX) error {
+		settings, err := models.GetSettings(tx)
+		if err != nil {
+			return err
+		}
+		s := settings.MetricsResolutions
+		f := models.AgentFilters{PushModelEnabled: true, PMMAgentID: pmmAgentID}
+		return addScrapeConfigs(l, &cfg, tx.Querier, &s, f)
+
+	})
+	if e != nil {
+		return nil, e
+	}
+	return yaml.Marshal(cfg)
 }
 
 // addScrapeConfigs adds Prometheus scrape configs to cfg for all Agents.
-func addScrapeConfigs(l *logrus.Entry, cfg *config.Config, q *reform.Querier, s *models.MetricsResolutions) error {
-	agents, err := q.SelectAllFrom(models.AgentTable, "WHERE NOT disabled AND listen_port IS NOT NULL ORDER BY agent_type, agent_id")
+func addScrapeConfigs(l *logrus.Entry, cfg *config.Config, q *reform.Querier, s *models.MetricsResolutions, filter models.AgentFilters) error {
+	var filterPush bool
+	var args []interface{}
+	var conditions []string
+
+	idx := 1
+	if filter.PushModelEnabled {
+		filterPush = true
+	}
+	if filter.PMMAgentID != "" {
+		conditions = append(conditions, fmt.Sprintf("pmm_agent_id = %s", q.Placeholder(idx)))
+		idx++
+		args = append(args, filter.PMMAgentID)
+	}
+
+	conditions = append(conditions, fmt.Sprintf("push_model_enabled = %s", q.Placeholder(idx)))
+	idx++
+	args = append(args, filterPush)
+
+	conditions = append(conditions, "NOT disabled", "listen_port IS NOT NULL")
+
+	whereClause := fmt.Sprintf("WHERE %s ORDER BY agent_type, agent_id ", strings.Join(conditions, " AND "))
+
+	agents, err := q.SelectAllFrom(models.AgentTable, whereClause, args...)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -213,6 +256,9 @@ func addScrapeConfigs(l *logrus.Entry, cfg *config.Config, q *reform.Querier, s 
 		// find Node address where the agent runs
 		var paramsHost string
 		switch {
+		// special case
+		case filterPush:
+			paramsHost = "127.0.0.1"
 		case agent.PMMAgentID != nil:
 			// extract node address through pmm-agent
 			pmmAgent, err := models.FindAgentByID(q, *agent.PMMAgentID)
@@ -396,7 +442,7 @@ func (svc *Service) marshalConfig() ([]byte, error) {
 			}
 		}
 
-		return addScrapeConfigs(svc.l, cfg, tx.Querier, &s)
+		return addScrapeConfigs(svc.l, cfg, tx.Querier, &s, models.AgentFilters{})
 	})
 	if e != nil {
 		return nil, e

@@ -351,6 +351,7 @@ func (s *RDSService) AddRDS(ctx context.Context, req *managementpb.AddRDSRequest
 					TLS:                   req.Tls,
 					TLSSkipVerify:         req.TlsSkipVerify,
 					QueryExamplesDisabled: req.DisableQueryExamples,
+					PushModelDisabled:     true,
 				})
 				if err != nil {
 					return err

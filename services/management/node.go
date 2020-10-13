@@ -121,7 +121,9 @@ func (s *NodeService) Register(ctx context.Context, req *managementpb.RegisterNo
 		}
 		res.PmmAgent = a.(*inventorypb.PMMAgent)
 
-		_, err = models.CreateNodeExporter(tx.Querier, pmmAgent.AgentID, nil)
+		// TODO we dont have version here, its bad
+		// possible options? add version? add push model req param?
+		_, err = models.CreateNodeExporter(tx.Querier, pmmAgent.AgentID, nil, false)
 		return err
 	}); e != nil {
 		return nil, e

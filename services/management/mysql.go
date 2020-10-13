@@ -127,6 +127,7 @@ func (s *MySQLService) Add(ctx context.Context, req *managementpb.AddMySQLReques
 				TLS:                   req.Tls,
 				TLSSkipVerify:         req.TlsSkipVerify,
 				QueryExamplesDisabled: req.DisableQueryExamples,
+				PushModelDisabled:     true,
 			})
 			if err != nil {
 				return err
@@ -149,6 +150,7 @@ func (s *MySQLService) Add(ctx context.Context, req *managementpb.AddMySQLReques
 				TLSSkipVerify:         req.TlsSkipVerify,
 				QueryExamplesDisabled: req.DisableQueryExamples,
 				MaxQueryLogSize:       maxSlowlogFileSize,
+				PushModelDisabled:     true,
 			})
 			if err != nil {
 				return err
