@@ -191,33 +191,26 @@ func GetAgentScrapeConfig(pmmAgentID string, l *logrus.Entry, db *reform.DB) ([]
 
 // addScrapeConfigs adds Prometheus scrape configs to cfg for all Agents.
 func addScrapeConfigs(l *logrus.Entry, cfg *config.Config, q *reform.Querier, s *models.MetricsResolutions, filter models.AgentFilters) error {
-	var filterPush bool
-	var args []interface{}
-	var conditions []string
-
-	idx := 1
-	if filter.PushModelEnabled {
-		filterPush = true
-	}
+	var (
+		args       []interface{}
+		conditions []string
+		idx        = 1
+	)
 	if filter.PMMAgentID != "" {
 		conditions = append(conditions, fmt.Sprintf("pmm_agent_id = %s", q.Placeholder(idx)))
 		idx++
 		args = append(args, filter.PMMAgentID)
 	}
-
 	conditions = append(conditions, fmt.Sprintf("push_model_enabled = %s", q.Placeholder(idx)))
 	idx++
-	args = append(args, filterPush)
-
+	args = append(args, filter.PushModelEnabled)
 	conditions = append(conditions, "NOT disabled", "listen_port IS NOT NULL")
-
 	whereClause := fmt.Sprintf("WHERE %s ORDER BY agent_type, agent_id ", strings.Join(conditions, " AND "))
 
 	agents, err := q.SelectAllFrom(models.AgentTable, whereClause, args...)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-
 	var rdsParams []*scrapeConfigParams
 	for _, str := range agents {
 		agent := str.(*models.Agent)
@@ -257,7 +250,7 @@ func addScrapeConfigs(l *logrus.Entry, cfg *config.Config, q *reform.Querier, s 
 		var paramsHost string
 		switch {
 		// special case
-		case filterPush:
+		case filter.PushModelEnabled:
 			paramsHost = "127.0.0.1"
 		case agent.PMMAgentID != nil:
 			// extract node address through pmm-agent

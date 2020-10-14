@@ -121,9 +121,7 @@ func (s *NodeService) Register(ctx context.Context, req *managementpb.RegisterNo
 		}
 		res.PmmAgent = a.(*inventorypb.PMMAgent)
 
-		// TODO we dont have version here, its bad
-		// possible options? add version? add push model req param?
-		_, err = models.CreateNodeExporter(tx.Querier, pmmAgent.AgentID, nil, false)
+		_, err = models.CreateNodeExporter(tx.Querier, pmmAgent.AgentID, nil, !req.UseVmagent)
 		return err
 	}); e != nil {
 		return nil, e

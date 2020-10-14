@@ -290,26 +290,13 @@ func CreateNodeExporter(q *reform.Querier, pmmAgentID string, customLabels map[s
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("\n\nagent: %v", pmmAgent.AgentID)
-	fmt.Printf("agent: %v", pmmAgent.Version)
-
-	//v, err := version.Parse(pointer.GetString(pmmAgent.Version))
-	//if err != nil {
-	//	return nil, fmt.Errorf("parse agent version failed: %w", err)
-	//}
-	var pushModelEnabled bool
-	//if !pushModelDisabled && !v.Less(pushModeSupported) {
-	//	pushModelEnabled = true
-	//}
-	// TODO fix
-	pushModelEnabled = true
 
 	row := &Agent{
 		AgentID:          id,
 		AgentType:        NodeExporterType,
 		PMMAgentID:       &pmmAgentID,
 		NodeID:           pmmAgent.RunsOnNodeID,
-		PushModelEnabled: pushModelEnabled,
+		PushModelEnabled: !pushModelDisabled,
 	}
 	if err := row.SetCustomLabels(customLabels); err != nil {
 		return nil, err
